@@ -111,7 +111,7 @@ contract Staking is AccessControl, ReentrancyGuard {
 
 	/// @dev withdraw fines to sender by token address, if sender is admin
 	function withdrawFine() external onlyRole(ADMIN_ROLE) {
-		require(accumulatedFine > 0, "Staking: accumulated fine is zero");
+		require(accumulatedFine > 0, "S:afz"); // "Staking: accumulated fine is zero"
 		IERC20(depositToken).safeTransfer(
 			msg.sender,
 			accumulatedFine
@@ -141,11 +141,8 @@ contract Staking is AccessControl, ReentrancyGuard {
 	}
 	
 	function stake(uint256 _amount) external {
-		require(isStakeAvailable, "Staking: stake is not available now");
-		require(
-			block.timestamp > startTime,
-			"Staking: stake time has not come yet"
-		);
+		require(isStakeAvailable, "S:sna"); //  "Staking: stake is not available now"
+		require(block.timestamp > startTime, "S:stn"); // "Staking: stake time has not come yet"
 		
 		// Transfer specified amount of staking tokens to the contract
 		IERC20(depositToken).safeTransferFrom(
@@ -168,13 +165,10 @@ contract Staking is AccessControl, ReentrancyGuard {
 	}
 	
 	function unstake(uint256 _amount) external nonReentrant {
-		require(isUnstakeAvailable, "Staking: unstake is not available now");
+		require(isUnstakeAvailable, "S:una"); // "Staking: unstake is not available now"
 
 		Staker storage staker = stakers[msg.sender];
-		require(
-			staker.amount >= _amount,
-			"Staking: not enough tokens to unstake"
-		);
+		require(staker.amount >= _amount, "S:netu"); // "Staking: not enough tokens to unstake"
 		
 		update();
 		
@@ -211,17 +205,11 @@ contract Staking is AccessControl, ReentrancyGuard {
 	}
 	
 	function requestUnstakeWithoutFine(uint256 amount) external {
-		require(isUnstakeAvailable, "Staking: unstake is not available now");
+		require(isUnstakeAvailable, "S:una"); // "Staking: unstake is not available now" 
 
 		Staker storage staker = stakers[msg.sender];
-		require(
-			staker.amount >= amount,
-			"Staking: not enough tokens to unstake"
-		);
-		require(
-			staker.requestedUnstakeAmount <= amount,
-			"Staking: you already have request with greater or equal amount"
-		);
+		require(staker.amount >= amount, "S:netu"); // "Staking: not enough tokens to unstake"
+		require(staker.requestedUnstakeAmount <= amount, "S:ahr"); // "Staking: you already have request with greater or equal amount"
 		
 		staker.noFineUnstakeOpenSince = block.timestamp + fineCooldownTime;
 		staker.requestedUnstakeAmount = amount;
@@ -231,12 +219,12 @@ contract Staking is AccessControl, ReentrancyGuard {
 
 	/// @dev claim available rewards
 	function claim() external nonReentrant {
-		require(isClaimAvailable, "Staking: claim is not available now");
+		require(isClaimAvailable, "S:cna"); // "Staking: claim is not available now"
 		if (totalStaked > 0) 
 			update();
 		
 		uint256 reward_ = _calcReward(msg.sender, rewardsPerDeposit);
-		require(reward_ > 0, "Staking: nothing to claim");
+		require(reward_ > 0, "S:nc"); // "Staking: nothing to claim"
 		
 		Staker storage staker = stakers[msg.sender];
 		
@@ -307,16 +295,13 @@ contract Staking is AccessControl, ReentrancyGuard {
 	/// @dev calculates the necessary parameters for staking
 	function _produced() internal view returns (uint256) {
 		uint256 halvingPeriodsQuantity_ = (block.timestamp - produceTime) / halvingDuration;
-		require(
 			/* 
 			no point to calc futher...and overflow protection
 			it's about 60-64 halving periods according 1%-100% startingRewardsPerEpoch
 			if halfingDuration is about three month on the uotput we will have 20 years max staking-live
 			in practice in 2 years, at 8-th halfing-action rewardsPerEpoch will be ~0.4%
 			 */
-			2 ** halvingPeriodsQuantity_ <= startingRewardsPerEpoch,
-			"Staking: game over"
-		);
+		require(2 ** halvingPeriodsQuantity_ <= startingRewardsPerEpoch); // "Staking: game over"
 		// epochCount need to floor(Vlad's comment -- i think that in 278 line we do all than needed)
 		uint256 epochQuantity_ = (block.timestamp - produceTime) / epochDuration * precision; 
 		// halvingDuration > epochDuration by design
