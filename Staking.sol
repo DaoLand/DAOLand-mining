@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "hardhat/console.sol";
 
 contract Staking is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -79,6 +80,14 @@ contract Staking is AccessControl, ReentrancyGuard {
         address indexed sender
     );
 
+    event ChangeParamFineCoolDownTime(uint256 fineCoolDownTime);
+    event ChangeParamFinePercent(uint256 finePercent);
+    event SetAvailability(
+        bool isStakeAvailable,
+        bool isUnstakeAvailable,
+        bool isClaimAvailable
+    );
+
     /**
      *@param _rewardsPerEpoch number of rewards per epoch
      *@param _startTime staking start time
@@ -101,8 +110,8 @@ contract Staking is AccessControl, ReentrancyGuard {
     ) {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(ADMIN_ROLE, msg.sender);
-        _setRoleAdmin(ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
 
+        require(_finePercent <= 100 * 1e18, "percent>1");
         startingRewardsPerEpoch = _rewardsPerEpoch;
         startTime = _startTime;
 
@@ -127,6 +136,7 @@ contract Staking is AccessControl, ReentrancyGuard {
         onlyRole(ADMIN_ROLE)
     {
         fineCooldownTime = _fineCoolDownTime;
+        emit ChangeParamFineCoolDownTime(_fineCoolDownTime);
     }
 
     /**
@@ -137,7 +147,9 @@ contract Staking is AccessControl, ReentrancyGuard {
         external
         onlyRole(ADMIN_ROLE)
     {
+        require(_finePercent <= 100 * 1e18, "percent>1");
         finePercent = _finePercent;
+        emit ChangeParamFinePercent(_finePercent);
     }
 
     /**
@@ -178,6 +190,12 @@ contract Staking is AccessControl, ReentrancyGuard {
             isUnstakeAvailable = _isUnstakeAvailable;
         if (isClaimAvailable != _isClaimAvailable)
             isClaimAvailable = _isClaimAvailable;
+
+        emit SetAvailability(
+            _isStakeAvailable,
+            _isUnstakeAvailable,
+            _isClaimAvailable
+        );
     }
 
     /**
@@ -198,11 +216,10 @@ contract Staking is AccessControl, ReentrancyGuard {
 
         Staker storage staker = stakers[msg.sender];
 
-        staker.rewardDebt += (amount * rewardsPerDeposit) / 1e20;
+        staker.rewardDebt += (amount * rewardsPerDeposit) / precision;
         totalStaked += amount;
         staker.amount += amount;
 
-        update();
         emit TokensStaked(amount, block.timestamp, msg.sender);
     }
 
@@ -218,7 +235,7 @@ contract Staking is AccessControl, ReentrancyGuard {
 
         update();
 
-        staker.rewardAllowed += ((amount * rewardsPerDeposit) / 1e20);
+        staker.rewardAllowed += ((amount * rewardsPerDeposit) / precision);
         staker.amount -= amount;
 
         uint256 unstakeAmount;
@@ -300,7 +317,7 @@ contract Staking is AccessControl, ReentrancyGuard {
             if (totalStaked > 0)
                 rewardsPerDeposit =
                     rewardsPerDeposit +
-                    ((producedNew_ * 1e20) / totalStaked);
+                    ((producedNew_ * precision) / totalStaked);
             rewardProduced += producedNew_;
         }
     }
@@ -355,7 +372,8 @@ contract Staking is AccessControl, ReentrancyGuard {
             uint256 rewardProducedAtNow = _produced();
             if (rewardProducedAtNow > rewardProduced) {
                 uint256 producedNew = rewardProducedAtNow - rewardProduced;
-                tempRewardPerDeposit += ((producedNew * 1e20) / totalStaked);
+                tempRewardPerDeposit += ((producedNew * precision) /
+                    totalStaked);
             }
         }
         uint256 reward = _calcReward(_user, tempRewardPerDeposit);
@@ -368,15 +386,14 @@ contract Staking is AccessControl, ReentrancyGuard {
         uint256 halvingPeriodsQuantity = (block.timestamp - produceTime) /
             halvingDuration;
 
-        require(
-            2**halvingPeriodsQuantity <= startingRewardsPerEpoch,
-            "Staking: game over"
-        );
         uint256 epochQuantity = ((block.timestamp - produceTime) /
             epochDuration) * precision;
         uint256 epochesInHalvingPeriod = (halvingDuration * precision) /
             epochDuration;
 
+        if (halvingPeriodsQuantity > 100) {
+            halvingPeriodsQuantity = 100;
+        }
         uint256 produced;
         for (uint256 i = 0; i <= halvingPeriodsQuantity; i++) {
             if (i != halvingPeriodsQuantity) {
@@ -404,7 +421,7 @@ contract Staking is AccessControl, ReentrancyGuard {
     {
         Staker memory staker = stakers[_user];
         return
-            ((staker.amount * _tps) / 1e20) +
+            ((staker.amount * _tps) / precision) +
             staker.rewardAllowed -
             staker.distributed -
             staker.rewardDebt;
